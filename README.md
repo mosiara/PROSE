@@ -49,8 +49,8 @@ PROSE operates under a strict **"fail open"** constraint. It prioritizes candida
 
 | Stage | Mechanism | Deterministic Rule / Mapping |
 | :--- | :--- | :--- |
-| **Stage 1: Direct Constraints** | Preposition-to-Domain Mapping | *Preposition $\rightarrow$ Compatible Lexical Domains.* Uses supported prepositional constructions to constrain candidate senses according to compatible WordNet lexicographer domains. The current prototype includes explicit mappings for 30+ supported English prepositions to subsets of compatible WordNet lexicographer domains. |
-| **Stage 2: Affordance Traversal** | Syntactic Attachment + Lexical Affordances | *Dependency Arc $\rightarrow$ Affordance Validation.* Resolves ambiguous attachments by combining dependency structure with lexical affordance checks, such as whether a noun is compatible with an instrument or attribute interpretation. |
+| **Stage 1: Direct Constraints** | Preposition-to-Domain Mapping | *Preposition &rarr; Compatible Lexical Domains.* Uses supported prepositional constructions to constrain candidate senses according to compatible WordNet lexicographer domains. The current prototype includes explicit mappings for 30+ supported English prepositions to subsets of compatible WordNet lexicographer domains. |
+| **Stage 2: Affordance Traversal** | Syntactic Attachment + Lexical Affordances | *Dependency Arc &rarr; Affordance Validation.* Resolves ambiguous attachments by combining dependency structure with lexical affordance checks, such as whether a noun is compatible with an instrument or attribute interpretation. |
 | **Stage 3: Safety Fallback** | Conservative Preservation Guard | If the available structural and lexical evidence does not support a deterministic elimination, PROSE fails open and preserves the full candidate set for the downstream model. |
 
 ---
