@@ -51,25 +51,31 @@ STATIC_PREP_MAP = {
     "out of": {"noun.location", "noun.state", "noun.artifact", "noun.substance", "noun.group", "noun.feeling"}
 }
 
-# --- ARCHITECT'S TAXONOMY PATCH ---
-# Surgically patches the abstract gaps in the STATIC_PREP_MAP
+# --- ARCHITECT'S TAXONOMY PATCH (FINAL V0.3.1) ---
 if "in" in STATIC_PREP_MAP:
-    STATIC_PREP_MAP["in"].update({"noun.attribute", "noun.act", "noun.quantity", "noun.relation"})
+    STATIC_PREP_MAP["in"].update({"noun.attribute", "noun.act", "noun.quantity", "noun.relation", "noun.communication", "noun.event", "noun.feeling", "noun.state", "noun.process"})
 if "on" in STATIC_PREP_MAP:
-    STATIC_PREP_MAP["on"].update({"noun.substance"})
+    STATIC_PREP_MAP["on"].update({"noun.substance", "noun.communication", "noun.body", "noun.quantity", "noun.feeling", "noun.relation", "noun.state"})
 if "at" in STATIC_PREP_MAP:
-    STATIC_PREP_MAP["at"].update({"noun.plant"})
+    STATIC_PREP_MAP["at"].update({"noun.plant", "noun.attribute", "noun.quantity", "noun.communication", "noun.object", "noun.animal", "noun.state", "noun.possession"})
+if "from" in STATIC_PREP_MAP:
+    STATIC_PREP_MAP["from"].update({"noun.attribute", "noun.quantity", "noun.communication", "noun.animal", "noun.cognition", "noun.feeling", "noun.phenomenon"})
+if "into" in STATIC_PREP_MAP:
+    STATIC_PREP_MAP["into"].update({"noun.communication", "noun.cognition"})
+
 
 # Expanded affordance domains based on the Triage Protocol
 INSTRUMENT_DOMAINS = {
     "noun.artifact", "noun.substance", "noun.communication", 
-    "noun.act", "noun.attribute", "noun.cognition", "noun.relation"
+    "noun.act", "noun.attribute", "noun.cognition", "noun.relation",
+    "noun.feeling", "noun.state", "noun.phenomenon", "noun.plant"
 }
 
 ATTRIBUTE_DOMAINS = {
     "noun.attribute", "noun.body", "noun.shape", "noun.state", "noun.relation", 
     "noun.person", "noun.animal", "noun.group", "noun.artifact",
-    "noun.act", "noun.cognition", "noun.communication", "noun.substance"
+    "noun.act", "noun.cognition", "noun.communication", "noun.substance",
+    "noun.feeling", "noun.phenomenon", "noun.plant"
 }
 
 COMITATIVE_DOMAINS = {
@@ -84,9 +90,9 @@ PASSIVE_AGENT_DOMAINS = {
 
 MEANS_PROXIMITY_DOMAINS = {
     "noun.act", "noun.artifact", "noun.communication", "noun.location", 
-    "noun.cognition", "noun.phenomenon", "noun.time", "noun.group", "noun.shape"
+    "noun.cognition", "noun.phenomenon", "noun.time", "noun.group", "noun.shape",
+    "noun.relation", "noun.event"
 }
-
 
 # ==========================================
 # 3. CORE FILTERING LOGIC
