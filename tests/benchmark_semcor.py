@@ -8,7 +8,6 @@ from nltk.corpus import semcor, wordnet as wn
 # Dynamically points to your locked ~/src/prose/src/ structure
 current = os.getcwd()
 sys.path.insert(0, os.path.join(current, "src"))
-from prose.core.filter import run_multistage_filter
 # --------------------------------
 
 nltk.download("semcor", quiet=True)
@@ -16,6 +15,8 @@ nltk.download("wordnet", quiet=True)
 nlp = spacy.load("en_core_web_sm")
 
 def evaluate_semcor(sample_target=50):
+    from prose.pipeline import ProsePipeline
+    pipeline = ProsePipeline()
     total_evaluated = 0
     preserved_gold = 0
     total_pure_csrr = 0.0
@@ -65,7 +66,7 @@ def evaluate_semcor(sample_target=50):
         if not is_governed_by_prep:
             continue 
 
-        result = run_multistage_filter(doc, target_word=target_word)
+        result = pipeline.process(doc.text, target_word, pos="NOUN")
 
         if gold_synset not in result.original_senses:
             unevaluable_skipped += 1
@@ -110,4 +111,4 @@ def evaluate_semcor(sample_target=50):
     print("=" * 50)
 
 if __name__ == "__main__":
-    evaluate_semcor(sample_target=50)
+    evaluate_semcor(sample_target=500)

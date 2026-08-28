@@ -1,12 +1,22 @@
 """
 PROSE Multi-Stage Candidate Elimination Engine
 """
-from dataclasses import dataclass
-from typing import List, Optional
-from spacy.tokens import Doc
 
-from .lexical import extract_candidate_senses as get_wordnet_candidates, CandidateSense as WordNetCandidate
-from .parser import DependencyParser, DependencyRelation
+from dataclasses import dataclass, field
+from typing import List, Optional
+from .lexical import CandidateSense
+from .parser import DependencyRelation
+
+# ==========================================
+# 1. DATA MODELS & ACTION LOGGING
+# ==========================================
+
+@dataclass
+class ConstraintDecision:
+    rule: str
+    passed: bool
+    eliminated_senses: List[str]
+    reason: str
 
 @dataclass
 class FilterResult:
@@ -15,6 +25,12 @@ class FilterResult:
     surviving_senses: List[str]
     stage_applied: str
     csrr: float
+    decisions: List[ConstraintDecision] = field(default_factory=list)
+
+
+# ==========================================
+# 2. STATIC PREPOSITION MAP & TAXONOMY
+# ==========================================
 
 STATIC_PREP_MAP = {
     "during": {"noun.time", "noun.event", "noun.act", "noun.process", "noun.state", "noun.phenomenon"},
@@ -23,122 +39,151 @@ STATIC_PREP_MAP = {
     "since": {"noun.time", "noun.event", "noun.act", "noun.state", "noun.process"},
     "after": {"noun.time", "noun.event", "noun.act", "noun.process", "noun.phenomenon"},
     "before": {"noun.time", "noun.event", "noun.act", "noun.process", "noun.location", "noun.person", "noun.group", "noun.artifact"},
-    "pending": {"noun.event", "noun.act", "noun.communication", "noun.cognition", "noun.process"},
-    "inside": {"noun.location", "noun.artifact", "noun.object", "noun.body", "noun.group", "noun.animal", "noun.plant", "noun.shape"},
-    "outside": {"noun.location", "noun.artifact", "noun.object", "noun.group", "noun.animal", "noun.body"},
-    "within": {"noun.location", "noun.artifact", "noun.group", "noun.time", "noun.state", "noun.quantity", "noun.relation", "noun.cognition", "noun.communication", "noun.act"},
-    "aboard": {"noun.artifact", "noun.location", "noun.object"}, 
-    "in": {"noun.location", "noun.artifact", "noun.group", "noun.state", "noun.event", "noun.time", "noun.act", "noun.cognition", "noun.communication", "noun.body", "noun.phenomenon", "noun.substance", "noun.feeling", "noun.possession", "noun.shape", "noun.process", "noun.object", "noun.Tops"},
-    "on": {"noun.location", "noun.artifact", "noun.time", "noun.event", "noun.communication", "noun.cognition", "noun.body", "noun.state", "noun.object", "noun.animal", "noun.plant", "noun.shape", "noun.act", "noun.Tops"},
-    "at": {"noun.location", "noun.artifact", "noun.time", "noun.event", "noun.group", "noun.state", "noun.quantity", "noun.object", "noun.person", "noun.animal", "noun.act", "noun.communication", "noun.cognition", "noun.feeling", "noun.phenomenon", "noun.Tops"},
-    "into": {"noun.location", "noun.artifact", "noun.state", "noun.event", "noun.act", "noun.cognition", "noun.group", "noun.substance", "noun.object", "noun.body", "noun.animal", "noun.process", "noun.shape"},
-    "onto": {"noun.location", "noun.artifact", "noun.body", "noun.object", "noun.animal"},
-    "toward": {"noun.location", "noun.artifact", "noun.person", "noun.group", "noun.event", "noun.time", "noun.state", "noun.object", "noun.animal", "noun.cognition", "noun.act"},
-    "towards": {"noun.location", "noun.artifact", "noun.person", "noun.group", "noun.event", "noun.time", "noun.state", "noun.object", "noun.animal", "noun.cognition", "noun.act"},
-    "through": {"noun.location", "noun.artifact", "noun.process", "noun.event", "noun.act", "noun.time", "noun.state", "noun.communication", "noun.object", "noun.body", "noun.substance", "noun.group", "noun.cognition"},
-    "across": {"noun.location", "noun.artifact", "noun.body", "noun.group", "noun.object", "noun.time", "noun.event", "noun.communication"},
-    "past": {"noun.location", "noun.artifact", "noun.person", "noun.time", "noun.event", "noun.object", "noun.group"},
-    "along": {"noun.location", "noun.artifact", "noun.body", "noun.object", "noun.group", "noun.communication"},
-    "from": {"noun.location", "noun.person", "noun.group", "noun.time", "noun.event", "noun.artifact", "noun.state", "noun.cognition", "noun.communication", "noun.relation", "noun.attribute", "noun.object", "noun.shape", "noun.body", "noun.animal", "noun.plant", "noun.phenomenon", "noun.act", "noun.process", "noun.substance", "noun.possession", "noun.motive"},
-    "off": {"noun.location", "noun.artifact", "noun.body", "noun.object", "noun.time", "noun.state", "noun.communication"},
-    "out of": {"noun.location", "noun.artifact", "noun.state", "noun.group", "noun.substance", "noun.feeling", "noun.object", "noun.body", "noun.act", "noun.cognition", "noun.time"},
-    "above": {"noun.location", "noun.artifact", "noun.person", "noun.group", "noun.quantity", "noun.state", "noun.communication", "noun.object", "noun.animal", "noun.relation"},
-    "below": {"noun.location", "noun.artifact", "noun.person", "noun.group", "noun.quantity", "noun.state", "noun.object", "noun.animal", "noun.relation"},
-    "over": {"noun.location", "noun.artifact", "noun.time", "noun.event", "noun.person", "noun.group", "noun.quantity", "noun.state", "noun.communication", "noun.object", "noun.body", "noun.animal", "noun.process", "noun.act"},
-    "under": {"noun.location", "noun.artifact", "noun.person", "noun.group", "noun.state", "noun.cognition", "noun.communication", "noun.object", "noun.body", "noun.animal", "noun.process", "noun.act"},
-    "beneath": {"noun.location", "noun.artifact", "noun.state", "noun.person", "noun.object", "noun.body", "noun.animal", "noun.group", "noun.cognition"},
-    "underneath": {"noun.location", "noun.artifact", "noun.body", "noun.object", "noun.animal", "noun.person"},
-    "near": {"noun.location", "noun.artifact", "noun.person", "noun.group", "noun.time", "noun.event", "noun.object", "noun.animal", "noun.state"},
-    "against": {"noun.artifact", "noun.person", "noun.group", "noun.location", "noun.cognition", "noun.communication", "noun.act", "noun.state", "noun.object", "noun.animal", "noun.body", "noun.phenomenon"},
-    "alongside": {"noun.location", "noun.artifact", "noun.person", "noun.group", "noun.object", "noun.animal", "noun.event"},
-    "amid": {"noun.group", "noun.event", "noun.state", "noun.act", "noun.phenomenon", "noun.location", "noun.artifact", "noun.feeling"},
-    "among": {"noun.group", "noun.person", "noun.artifact", "noun.animal", "noun.plant", "noun.location", "noun.object"},
-    "between": {"noun.group", "noun.person", "noun.artifact", "noun.location", "noun.time", "noun.event", "noun.state", "noun.relation", "noun.object", "noun.animal", "noun.cognition", "noun.act"},
-    "without": {"noun.person", "noun.group", "noun.artifact", "noun.attribute", "noun.feeling", "noun.state", "noun.substance", "noun.possession", "noun.animal", "noun.object", "noun.cognition", "noun.communication", "noun.act", "noun.event"},
-    "via": {"noun.artifact", "noun.location", "noun.person", "noun.communication", "noun.act", "noun.group", "noun.process", "noun.cognition"}
+    "in": {"noun.location", "noun.group", "noun.time", "noun.state", "noun.cognition", "noun.phenomenon", "noun.artifact", "noun.substance"},
+    "on": {"noun.location", "noun.time", "noun.communication", "noun.artifact", "noun.cognition"},
+    "at": {"noun.location", "noun.time", "noun.event", "noun.act", "noun.group", "noun.artifact"},
+    "from": {"noun.location", "noun.time", "noun.person", "noun.group", "noun.artifact", "noun.substance", "noun.cognition"},
+    "over": {"noun.location", "noun.time", "noun.artifact", "noun.communication"},
+    "under": {"noun.location", "noun.state", "noun.artifact", "noun.person", "noun.group"},
+    "into": {"noun.location", "noun.state", "noun.artifact", "noun.substance", "noun.group"},
+    "without": {"noun.artifact", "noun.substance", "noun.person", "noun.group", "noun.attribute", "noun.feeling"},
+    "among": {"noun.person", "noun.group", "noun.animal", "noun.artifact", "noun.plant"},
+    "out of": {"noun.location", "noun.state", "noun.artifact", "noun.substance", "noun.group", "noun.feeling"}
 }
 
-INSTRUMENT_DOMAINS = {"noun.artifact", "noun.substance", "noun.communication"}
-COMITATIVE_DOMAINS = {"noun.person", "noun.group", "noun.animal"}
-ATTRIBUTE_DOMAINS = {"noun.attribute", "noun.body", "noun.shape", "noun.state", "noun.relation"}
-AGENT_DOMAINS = {"noun.person", "noun.group", "noun.animal", "noun.act", "noun.event", "noun.cognition", "noun.state"}
-TRANSPORT_DOMAINS = {"noun.artifact"}
+# --- ARCHITECT'S TAXONOMY PATCH ---
+# Surgically patches the abstract gaps in the STATIC_PREP_MAP
+if "in" in STATIC_PREP_MAP:
+    STATIC_PREP_MAP["in"].update({"noun.attribute", "noun.act", "noun.quantity", "noun.relation"})
+if "on" in STATIC_PREP_MAP:
+    STATIC_PREP_MAP["on"].update({"noun.substance"})
+if "at" in STATIC_PREP_MAP:
+    STATIC_PREP_MAP["at"].update({"noun.plant"})
 
-def is_animate(lemma: str) -> bool:
-    if not lemma:
+# Expanded affordance domains based on the Triage Protocol
+INSTRUMENT_DOMAINS = {
+    "noun.artifact", "noun.substance", "noun.communication", 
+    "noun.act", "noun.attribute", "noun.cognition", "noun.relation"
+}
+
+ATTRIBUTE_DOMAINS = {
+    "noun.attribute", "noun.body", "noun.shape", "noun.state", "noun.relation", 
+    "noun.person", "noun.animal", "noun.group", "noun.artifact",
+    "noun.act", "noun.cognition", "noun.communication", "noun.substance"
+}
+
+COMITATIVE_DOMAINS = {
+    "noun.person", "noun.group", "noun.animal"
+}
+
+PASSIVE_AGENT_DOMAINS = {
+    "noun.person", "noun.group", "noun.animal", "noun.act", "noun.event", 
+    "noun.cognition", "noun.artifact", "noun.substance", "noun.phenomenon", 
+    "noun.feeling", "noun.state"
+}
+
+MEANS_PROXIMITY_DOMAINS = {
+    "noun.act", "noun.artifact", "noun.communication", "noun.location", 
+    "noun.cognition", "noun.phenomenon", "noun.time", "noun.group", "noun.shape"
+}
+
+
+# ==========================================
+# 3. CORE FILTERING LOGIC
+# ==========================================
+
+def is_animate(ctx: DependencyRelation) -> bool:
+    """
+    Evaluates subject animacy using deterministic morphosyntactic markers 
+    to prevent false eliminations of pronouns and anaphora.
+    """
+    if not ctx.subject_pos:
         return False
-    cands = get_wordnet_candidates(lemma)
-    return any(c.lexname in COMITATIVE_DOMAINS for c in cands)
+    if ctx.subject_pos in {"PRON", "PROPN"}:
+        return True
+    return False
 
-def filter_candidate_senses(candidates: List[WordNetCandidate], ctx: Optional[DependencyRelation], target_word: str) -> FilterResult:
-    original_sense_keys = [c.synset_id for c in candidates]
+def filter_candidate_senses(
+    candidates: List[CandidateSense], 
+    ctx: Optional[DependencyRelation], 
+    target_word: str
+) -> FilterResult:
     
-    if not candidates:
-        return FilterResult(target_word, [], [], "Stage 0 (No Candidates)", 0.0)
-        
-    if not ctx:
-        return FilterResult(target_word, original_sense_keys, original_sense_keys, "Stage 3 (Fallback - Unresolved)", 0.0)
-
-    surviving: List[WordNetCandidate] = []
+    original_senses = [c.synset_id for c in candidates]
+    surviving = original_senses.copy()
     stage_applied = "Stage 3 (Fallback - Preserved All)"
-    prep_lemma = ctx.prep_lemma.lower() if hasattr(ctx, 'prep_lemma') else ctx.prep_text.lower()
+    decisions = []
 
-    if prep_lemma in STATIC_PREP_MAP:
-        allowed_domains = STATIC_PREP_MAP[prep_lemma]
-        surviving = [c for c in candidates if c.lexname in allowed_domains]
-        if surviving:
-            stage_applied = "Stage 1 (Direct Constraint)"
+    if ctx and candidates:
+        prep_lemma = ctx.prep_lemma.lower()
+        allowed_domains = set()
+        stage_triggered = False
+        rule_name = ""
+        reason = ""
 
-    elif prep_lemma == "with":
-        if ctx.governor_pos == "VERB":
-            # Unlock Comitative for Proper Nouns OR explicitly animate dictionary words
-            if ctx.subject_pos == "PROPN" or (ctx.subject_lemma and is_animate(ctx.subject_lemma)):
-                allowed = INSTRUMENT_DOMAINS | COMITATIVE_DOMAINS
-                stage_applied = "Stage 2 (Comitative/Instrument Affordance)"
+        if prep_lemma == "with":
+            if ctx.governor_pos in {"VERB", "AUX"}:
+                if is_animate(ctx):
+                    allowed_domains = INSTRUMENT_DOMAINS | COMITATIVE_DOMAINS
+                    reason = "Animate subject detected; allowing Comitative and Instrument."
+                else:
+                    allowed_domains = INSTRUMENT_DOMAINS
+                    reason = "Inanimate subject detected; restricting to Instrument."
+                rule_name = "Stage 2 (Comitative/Instrument Affordance)"
             else:
-                allowed = INSTRUMENT_DOMAINS
-                stage_applied = "Stage 2 (Instrument Affordance)"
-                
-            surviving = [c for c in candidates if c.lexname in allowed]
-        elif ctx.governor_pos in {"NOUN", "PROPN"}:
-            surviving = [c for c in candidates if c.lexname in ATTRIBUTE_DOMAINS]
-            if surviving:
-                stage_applied = "Stage 2 (Attribute Affordance)"
+                allowed_domains = ATTRIBUTE_DOMAINS
+                rule_name = "Stage 2 (Attribute/Companion Affordance)"
+                reason = "Nominal governor detected; allowing Attribute/Companion domains."
+            stage_triggered = True
 
-    elif prep_lemma == "by":
-        if ctx.is_passive_governor or "pass" in ctx.governor_dep or "pass" in ctx.target_dep:
-            surviving = [c for c in candidates if c.lexname in AGENT_DOMAINS]
-            if surviving:
-                stage_applied = "Stage 2 (Passive Agent Affordance)"
-        elif ctx.governor_pos == "VERB":
-            surviving = [c for c in candidates if c.lexname in (TRANSPORT_DOMAINS | {"noun.location"})]
-            if surviving:
-                stage_applied = "Stage 2 (Means/Proximity Affordance)"
+        elif prep_lemma == "by":
+            if ctx.is_passive_governor:
+                allowed_domains = PASSIVE_AGENT_DOMAINS
+                rule_name = "Stage 2 (Passive Agent Affordance)"
+                reason = "Passive voice detected; allowing extended Agent domains."
+            elif ctx.governor_pos in {"VERB", "AUX"}:
+                allowed_domains = MEANS_PROXIMITY_DOMAINS
+                rule_name = "Stage 2 (Means/Proximity Affordance)"
+                reason = "Active voice verbal governor detected; allowing Means/Proximity."
+            stage_triggered = True
 
-    if not surviving:
-        surviving = candidates
-        stage_applied = "Stage 3 (Fallback - Preserved All)"
+        elif prep_lemma in STATIC_PREP_MAP:
+            allowed_domains = STATIC_PREP_MAP[prep_lemma]
+            rule_name = "Stage 1 (Direct Constraint)"
+            reason = f"Static mapping applied for preposition '{prep_lemma}'."
+            stage_triggered = True
 
-    surviving_keys = [c.synset_id for c in surviving]
-    csrr = 1.0 - (len(surviving_keys) / len(original_sense_keys)) if original_sense_keys else 0.0
+        if stage_triggered:
+            # Globally protect foundational concepts and food from broad static elimination
+            allowed_domains.update({"noun.Tops", "noun.food"})
+            filtered = [c.synset_id for c in candidates if c.lexname in allowed_domains]
+            eliminated = list(set(original_senses) - set(filtered))
+            
+            if filtered:
+                surviving = filtered
+                stage_applied = rule_name
+                decisions.append(ConstraintDecision(
+                    rule=rule_name,
+                    passed=True,
+                    eliminated_senses=eliminated,
+                    reason=reason
+                ))
+            else:
+                stage_applied = "Stage 3 (Fallback - Empty Intersect Guard)"
+                decisions.append(ConstraintDecision(
+                    rule=rule_name,
+                    passed=False,
+                    eliminated_senses=[],
+                    reason="Empty intersect detected. Reverting to fail-open safety."
+                ))
+
+    csrr = 1.0 - (len(surviving) / len(original_senses)) if original_senses else 0.0
 
     return FilterResult(
         target_word=target_word,
-        original_senses=original_sense_keys,
-        surviving_senses=surviving_keys,
+        original_senses=original_senses,
+        surviving_senses=surviving,
         stage_applied=stage_applied,
-        csrr=csrr
+        csrr=csrr,
+        decisions=decisions
     )
-
-_parser_instance = None
-
-def run_multistage_filter(doc: Doc, target_word: str) -> FilterResult:
-    global _parser_instance
-    if _parser_instance is None:
-        _parser_instance = DependencyParser()
-        
-    candidates = get_wordnet_candidates(target_word)
-    relations = _parser_instance.extract_relations(doc, target_word)
-    ctx = relations[0] if relations else None
-         
-    return filter_candidate_senses(candidates, ctx, target_word)

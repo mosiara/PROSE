@@ -1,9 +1,6 @@
-"""
-PROSE Syntactic Parser Layer
-"""
-import spacy
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import List, Optional
+import spacy
 from spacy.tokens import Doc, Token
 
 @dataclass
@@ -14,6 +11,7 @@ class DependencyRelation:
     target_dep: str
     prep_idx: int
     prep_text: str
+    prep_lemma: str
     prep_dep: str
     governor_idx: int
     governor_text: str
@@ -25,67 +23,85 @@ class DependencyRelation:
     subject_pos: Optional[str] = None
     is_passive_governor: bool = False
 
+
 class DependencyParser:
-    def __init__(self, nlp: Optional[spacy.Language] = None):
-        self.nlp = nlp or spacy.load("en_core_web_sm")
+    def __init__(self, model: str = "en_core_web_sm"):
+        """Initializes the parser with the specified spaCy model."""
+        self.nlp = spacy.load(model)
+
+    def _is_passive(self, governor: Token) -> bool:
+        """
+        Identifies if the governor verb is in a passive construction
+        using strict morphological and dependency markers.
+        """
+        # Strict check for passive auxiliary
+        if any(child.dep_ == "auxpass" for child in governor.children):
+            return True
+            
+        # Check for participial modifier using exact VBN (past participle) tag
+        if governor.dep_ in {"acl", "amod"} and governor.tag_ == "VBN":
+            return True
+            
+        return False
 
     def _find_subject(self, governor: Token) -> Optional[Token]:
         """
-        Traverse the syntax tree to locate the main clause subject.
+        Traverses the syntax tree to locate the main clause subject.
         """
         for child in governor.children:
-            if child.dep_ in {"nsubj", "nsubjpass", "csubj", "csubjpass"}:
+            if "subj" in child.dep_:
                 return child
                 
         if governor.dep_ in {"xcomp", "ccomp", "advcl"} and governor.head:
             for child in governor.head.children:
-                if child.dep_ in {"nsubj", "nsubjpass", "csubj", "csubjpass"}:
+                if "subj" in child.dep_:
                     return child
                     
         return None
 
-    def _is_passive(self, governor: Token) -> bool:
-        """
-        Robustly detect passive constructions beyond simple 'auxpass'.
-        Catches "was victimized", "became victimized", and participial modifiers.
-        """
-        if any("pass" in child.dep_ for child in governor.children):
-            return True
-        if governor.head and governor.head.lemma_ in {"become", "get", "be"}:
-            return True
-        if governor.dep_ in {"acl", "amod"} and governor.text.endswith("ed"):
-            return True
-        return False
-
     def extract_relations(self, doc: Doc, target_word: str) -> List[DependencyRelation]:
+        """
+        Extracts structural relationships between the target word, its preposition,
+        the governing verb, and the main clause subject.
+        """
         relations = []
-        target_clean = target_word.lower().replace("_", " ")
+        # Exact token binding to prevent substring matches (e.g., 'art' matching 'cart')
+        target_tokens = set(target_word.lower().replace("_", " ").split())
 
         for token in doc:
-            if token.text.lower() in target_clean or token.lemma_.lower() in target_clean:
-                if token.dep_ == "pobj" and token.head.pos_ == "ADP":
-                    prep_token = token.head
-                    governor = prep_token.head
-                    subject_token = self._find_subject(governor)
+            if token.text.lower() in target_tokens or token.lemma_.lower() in target_tokens:
+                if token.head.pos_ == "ADP":
+                    prep = token.head
+                    prep_text = prep.text
+                    prep_lemma = prep.lemma_
+                    governor = prep.head
                     
-                    rel = DependencyRelation(
+                    # Multi-word preposition normalization (e.g., "out of")
+                    if prep.i > 0 and doc[prep.i - 1].lemma_.lower() == "out" and prep.lemma_.lower() == "of":
+                        prep_text = "out of"
+                        prep_lemma = "out of"
+                        governor = doc[prep.i - 1].head
+
+                    subject = self._find_subject(governor)
+
+                    relations.append(DependencyRelation(
                         target_idx=token.i,
                         target_text=token.text,
                         target_lemma=token.lemma_,
                         target_dep=token.dep_,
-                        prep_idx=prep_token.i,
-                        prep_text=prep_token.text,
-                        prep_dep=prep_token.dep_,
+                        prep_idx=prep.i,
+                        prep_text=prep_text,
+                        prep_lemma=prep_lemma,
+                        prep_dep=prep.dep_,
                         governor_idx=governor.i,
                         governor_text=governor.text,
                         governor_lemma=governor.lemma_,
                         governor_pos=governor.pos_,
                         governor_dep=governor.dep_,
-                        subject_text=subject_token.text if subject_token else None,
-                        subject_lemma=subject_token.lemma_ if subject_token else None,
-                        subject_pos=subject_token.pos_ if subject_token else None,
+                        subject_text=subject.text if subject else None,
+                        subject_lemma=subject.lemma_ if subject else None,
+                        subject_pos=subject.pos_ if subject else None,
                         is_passive_governor=self._is_passive(governor)
-                    )
-                    relations.append(rel)
+                    ))
                     
         return relations
