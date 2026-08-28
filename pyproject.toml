@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prose"
+version = "0.3.0"
+description = "Pruning Redundant Options in Sense Evaluation"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "spacy>=3.0.0",
+    "nltk>=3.8.0",
+    "python-dotenv>=1.0.0",
+    "google-genai",
+    "tenacity>=8.0.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

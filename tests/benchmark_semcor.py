@@ -5,9 +5,10 @@ import nltk
 from nltk.corpus import semcor, wordnet as wn
 
 # --- BULLETPROOF IMPORT BLOCK ---
+# Dynamically points to your locked ~/src/prose/src/ structure
 current = os.getcwd()
-sys.path.extend([current, os.path.join(current, 'src'), os.path.join(current, 'src', 'prose')])
-from core.filter import run_multistage_filter
+sys.path.insert(0, os.path.join(current, "src"))
+from prose.core.filter import run_multistage_filter
 # --------------------------------
 
 nltk.download("semcor", quiet=True)
@@ -17,7 +18,7 @@ nlp = spacy.load("en_core_web_sm")
 def evaluate_semcor(sample_target=50):
     total_evaluated = 0
     preserved_gold = 0
-    total_csrr = 0.0
+    total_pure_csrr = 0.0
     stage_counts = {}
     unevaluable_skipped = 0
 
@@ -66,28 +67,34 @@ def evaluate_semcor(sample_target=50):
 
         result = run_multistage_filter(doc, target_word=target_word)
 
-        # CANDIDATE POOL CHECK: Skip if the dictionary failed to provide the answer key
         if gold_synset not in result.original_senses:
             unevaluable_skipped += 1
             continue
 
-        if len(result.original_senses) > 1:
+        # --- ISOLATE POS FROM SEMANTIC REDUCTION ---
+        # Restrict the evaluation pools strictly to noun senses to eliminate POS-inflation
+        pure_original_senses = [s for s in result.original_senses if ".n." in s]
+        pure_surviving_senses = [s for s in result.surviving_senses if ".n." in s]
+        
+        pure_csrr = 1.0 - (len(pure_surviving_senses) / len(pure_original_senses)) if pure_original_senses else 0.0
+
+        if len(pure_original_senses) > 1:
             total_evaluated += 1
-            total_csrr += result.csrr
+            total_pure_csrr += pure_csrr
             stage_counts[result.stage_applied] = stage_counts.get(result.stage_applied, 0) + 1
 
-            if gold_synset in result.surviving_senses:
+            if gold_synset in pure_surviving_senses:
                 preserved_gold += 1
             else:
                 print(f"\n[⚠️ False Elimination] Target: '{target_word}' | Gold: {gold_synset}")
                 print(f"Sentence: {raw_sentence}")
                 print(f"Stage: {result.stage_applied}")
-                print(f"Surviving ({len(result.surviving_senses)}): {result.surviving_senses}")
+                print(f"Surviving ({len(pure_surviving_senses)}): {pure_surviving_senses}")
 
         if total_evaluated >= sample_target:
             break
 
-    csrr_avg = (total_csrr / total_evaluated) if total_evaluated > 0 else 0.0
+    csrr_avg = (total_pure_csrr / total_evaluated) if total_evaluated > 0 else 0.0
     preservation_rate = (preserved_gold / total_evaluated) if total_evaluated > 0 else 0.0
 
     print("\n" + "=" * 50)
@@ -95,7 +102,7 @@ def evaluate_semcor(sample_target=50):
     print("=" * 50)
     print(f"Total Sentences Evaluated:     {total_evaluated}")
     print(f"Unevaluable Targets Skipped:   {unevaluable_skipped}")
-    print(f"Mean Candidate Reduction Rate: {csrr_avg:.1%}")
+    print(f"Pure Semantic Reduction Rate:  {csrr_avg:.1%} (CSRR)")
     print(f"Correct Sense Preservation:    {preservation_rate:.1%}")
     print("\nStage Execution Breakdown:")
     for stage, count in stage_counts.items():
