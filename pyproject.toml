@@ -4,16 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "prose"
-version = "0.3.0"
-description = "Pruning Redundant Options in Sense Evaluation"
-readme = "README.md"
+version = "0.4.0"
+description = "Pre-processing Reduction of Senses Engine"
+authors = [
+    {name = "E. Nyangau"}
+]
 requires-python = ">=3.9"
 dependencies = [
-    "spacy>=3.0.0",
-    "nltk>=3.8.0",
-    "python-dotenv>=1.0.0",
-    "google-genai",
-    "tenacity>=8.0.0",
+    "spacy<3.8.0",
+    "pydantic>=2.0.0",
+    "nltk>=3.8.1"
 ]
 
 [tool.setuptools.packages.find]
